@@ -6,7 +6,9 @@ if File.exists?("#{Rails.root}/admin-shared/config/applications.rb")
 end
 
 #TODO REMOVE THIS LINE WHEN YOU ACTUALLY HAVE YOUR APP IN THE MAIN LIST
-Rails.configuration.application_list ||= {}
+unless Rails.configuration.respond_to?(:application_list)
+  Rails.configuration.application_list = {}
+end
 Rails.configuration.application_list['test_app'] = {
   'title': 'Test App',
   url: {
