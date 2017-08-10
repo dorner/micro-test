@@ -1,0 +1,63 @@
+Parameters:
+
+  DisplayName:
+    Type: String
+
+Resources:
+
+  Repository: 
+    Type: AWS::ECR::Repository
+    Properties: 
+      RepositoryName: !Ref DisplayName
+
+  CIBuildUser:
+    Type: AWS::IAM::User
+    Properties:
+      UserName: !Sub ci-build.${DisplayName}
+      Path: /
+      Groups:
+        - Fn::ImportValue: PlatformSharedResources-CIBuildIAMGroup
+      Policies:
+        - PolicyName: ecr
+          PolicyDocument: 
+            Version: "2012-10-17"
+            Statement: 
+              - Effect: "Allow"
+                Action: 
+                  - ecr:InitiateLayerUpload
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:PutImage
+                  - ecr:InitiateLayerUpload
+                  - ecr:UploadLayerPart
+                  - ecr:CompleteLayerUpload
+                  - ecr:DescribeRepositories
+                  - ecr:GetRepositoryPolicy
+                  - ecr:ListImages
+                  - ecr:SetRepositoryPolicy
+                  - ecr:GetAuthorizationToken
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:BatchGetImage
+                Resource:
+                  - !Sub "arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/${DisplayName}"
+
+Outputs:
+
+  Repository:
+    Value: !Ref CIBuildUser
+    Export:
+      Name: !Sub ${AWS::StackName}-cibuilduser
+
+  Repository:
+    Value: !Ref Repository
+    Export:
+      Name: !Sub ${AWS::StackName}-ecr
+
+  RepositoryUrl:
+    Value: !Join ["", [ !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/", !Ref Repository ]]
+    Export:
+      Name: !Sub ${AWS::StackName}-ecrUrl
+
+  DisplayName:
+    Value: !Ref DisplayName
+    Export:
+      Name: !Sub ${AWS::StackName}-displayname

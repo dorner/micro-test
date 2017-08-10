@@ -1,0 +1,206 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Rails Elastic Beanstalk app with two environments and an Amazon Aurora \
+             separated database. \
+             Uses an SQS queue to back up the active-elastic-job gem.
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: production
+    Description: Environment (dev, staging, production)
+    AllowedPattern: "[a-zA-z]+"
+    ConstraintDescription: Only letters and numbers.
+  VpcId:
+    Type: String
+    Description: ID of the VPC to add the application into.
+  SubnetId:
+    Type: String
+    Description: VPC Subnet to put the application into.
+
+  SubnetId2:
+    Type: String
+    Description: Second subnet for the RDS instance.
+  DBPassword:
+    Type: String
+    Description: Password for the main database.
+
+  SecretKeyBase:
+    Type: String
+    AllowedPattern: "[a-fA-F0-9]+"
+    Description: Secret Key for the Rails app.
+
+Resources:
+
+  RdsSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Test App
+      SubnetIds:
+        - !Ref SubnetId
+        - !Ref SubnetId2
+
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Test App
+      VpcId: !Ref VpcId
+
+  SelfSecurityGroupIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref SecurityGroup
+      IpProtocol: -1
+      ToPort: -1
+      FromPort: -1
+      SourceSecurityGroupId: !Ref SecurityGroup
+    DependsOn: SecurityGroup
+
+  SSHSecurityGroupIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref SecurityGroup
+      IpProtocol: tcp
+      ToPort: 22
+      FromPort: 22
+      CidrIp: "0.0.0.0/0"
+    DependsOn: SecurityGroup
+
+
+  DBClusterParameterGroup:
+    Type: AWS::RDS::DBClusterParameterGroup
+    Properties:
+      Description: CloudFormation Sample Aurora Cluster Parameter Group
+      Family: aurora5.6
+      Parameters:
+        time_zone: US/Eastern
+
+  DBParameterGroup:
+    Type: AWS::RDS::DBParameterGroup
+    Properties:
+      Description: CloudFormation Sample Aurora Parameter Group
+      Family: aurora5.6
+      Parameters:
+        slow_query_log: 1
+        long_query_time: 4.9
+        log_output: FILE
+        slow_launch_time: 0
+        log_queries_not_using_indexes: 0
+
+  MainDatabase:
+    Type: AWS::RDS::DBCluster
+    Properties:
+      MasterUsername: test_app
+      MasterUserPassword: !Ref DBPassword
+      Engine: aurora
+      DBSubnetGroupName: !Ref RdsSubnetGroup
+      DBClusterParameterGroupName: !Ref DBClusterParameterGroup
+      VpcSecurityGroupIds:
+        - !Ref SecurityGroup
+      DatabaseName: !Sub test_app_${EnvironmentName}
+
+  MainDBInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBSubnetGroupName: !Ref RdsSubnetGroup
+      DBParameterGroupName: !Ref DBParameterGroup
+      Engine: aurora
+      DBClusterIdentifier: !Ref MainDatabase
+      PubliclyAccessible: 'false'
+      DBInstanceClass: db.t2.medium
+
+
+
+
+  MainApplication:
+    Type: AWS::ElasticBeanstalk::Application
+    Properties:
+      ApplicationName: test_app
+      Description: Test App
+
+
+
+
+
+
+  AppEnvironment:
+    Type: AWS::ElasticBeanstalk::Environment
+    Properties:
+      ApplicationName: test_app
+      EnvironmentName: !Sub test-app-${EnvironmentName}-app
+      SolutionStackName: 64bit Amazon Linux 2016.09 v2.3.1 running Ruby 2.3 (Passenger Standalone)
+      Tier:
+        Name: WebServer
+        Type: Standard
+      OptionSettings:
+        # Shared config
+        - Namespace: aws:elasticbeanstalk:environment
+          OptionName: ServiceRole
+          Value: aws-elasticbeanstalk-service-role
+        - Namespace: aws:elasticbeanstalk:environment
+          OptionName: EnvironmentType
+          Value: SingleInstance
+        - Namespace: aws:autoscaling:launchconfiguration
+          OptionName: InstanceType
+          Value: t2.medium
+        - Namespace: aws:autoscaling:launchconfiguration
+          OptionName: IamInstanceProfile
+          Value: aws-elasticbeanstalk-ec2-role
+        - Namespace: aws:autoscaling:launchconfiguration
+          OptionName: RootVolumeSize
+          Value: "30"
+        - Namespace: aws:autoscaling:launchconfiguration
+          OptionName: SecurityGroups
+          Value: !Ref SecurityGroup
+        - Namespace: aws:autoscaling:asg
+          OptionName: MaxSize
+          Value: "1"
+        - Namespace: aws:elasticbeanstalk:healthreporting:system
+          OptionName: SystemType
+          Value: enhanced
+        - Namespace: aws:ec2:vpc
+          OptionName: VPCId
+          Value: !Ref VpcId
+        - Namespace: aws:ec2:vpc
+          OptionName: Subnets
+          Value: !Ref SubnetId
+        - Namespace: aws:elasticbeanstalk:cloudwatch:logs
+          OptionName: StreamLogs
+          Value: "true"
+        
+
+        # Environment Variables
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: RACK_ENV
+          Value: !Ref EnvironmentName
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: SECRET_KEY_BASE
+          Value: !Ref SecretKeyBase
+
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: RDS_DB_NAME
+          Value: !Sub test_app_${EnvironmentName}
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: RDS_HOSTNAME
+          Value: !GetAtt MainDatabase.Endpoint.Address
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: RDS_PASSWORD
+          Value: !Ref DBPassword
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: RDS_PORT
+          Value: !GetAtt MainDatabase.Endpoint.Port
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: RDS_USERNAME
+          Value: test_app
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: RAILS_SKIP_MIGRATIONS
+          Value: "true"
+
+  
+        # for app only
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: RAILS_SKIP_ASSET_COMPILATION
+          Value: "false"
+        - Namespace: aws:ec2:vpc
+          OptionName: ELBSubnets
+          Value: !Ref SubnetId
+

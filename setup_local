@@ -1,0 +1,58 @@
+#!/usr/bin/env ruby
+require 'thor'
+require 'yaml'
+
+class App < Thor
+  include Thor::Actions
+
+  def self.source_root
+    File.dirname(__FILE__)
+  end
+
+  desc 'setup', 'Set up your local repo'
+  def setup
+    if `which pip`.blank?
+      say("Please install pip and come back when you're done!")
+      exit
+    end
+
+    config = YAML.load_file('./config/database.yml').with_indifferent_access
+
+    say 'Creating local MySQL databases...'
+    mysql_user = ENV['MYSQL_USERNAME'] || 'root'
+    mysql_pass = ENV['MYSQL_PASSWORD'] || ''
+    mysql_command = "mysql -u#{mysql_user}"
+    if mysql_pass.present?
+      mysql_command << " -p#{mysql_pass}"
+    end
+    begin
+      dev_db = config[:development][:database]
+      test_db = config[:test][:database]
+      run("#{mysql_command} -e 'create database if not exists #{dev_db}'")
+      run("#{mysql_command} -e 'create database if not exists #{test_db}'")
+      run 'rake db:migrate db:test:prepare'
+    rescue => e
+      say("Could not create databases: #{e.message}")
+    end
+
+    say 'Updating submodules...'
+    run 'git submodule init && git submodule update'
+    run 'ln -s -f ../../flipp-ruby-style-guide/lib/hooks/pre-commit .git/hooks/pre-commit'
+
+    run 'bundle install'
+
+    say 'Initializing Elastic Beanstalk command line...'
+    run 'pip install --upgrade --user awsebcli'
+
+    run 'eb init'
+
+    append_to_file('.elasticbeanstalk/config.yml', <<-CONFIG
+deploy:
+  artifact: ebdeploy.zip
+CONFIG
+)
+
+    say "Your setup is complete! Run ./create_aws_resources if you're using Elastic Beanstalk!"
+  end
+end
+App.start(['setup'])

@@ -1,0 +1,6 @@
+[submodule "admin-shared"]
+	path = admin-shared
+	url = git@github.com:wishabi/admin-shared.git
+[submodule "flipp-ruby-style-guide"]
+	path = flipp-ruby-style-guide
+	url = git@github.com:wishabi/flipp-ruby-style-guide.git

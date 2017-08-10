@@ -1,0 +1,123 @@
+<% content_for :title, 'Job Listing' %>
+<% content_for :description, "View finished jobs." %>
+
+<script>
+  $(document).on('click', '.dialog-link', function() {
+    let dialog = $(this).next('.dialog');
+    dialog.dialog({
+      width: '100%',
+      autoOpen: false,
+      title: $(this).data('title'),
+        close: function(event, ui)
+        {
+            $(this).dialog('destroy');
+        }
+    }).dialog('open');
+    return false;
+  });
+</script>
+<style>
+  .dialog { display: none; }
+  .ui-dialog-content p { font-family: monospace; }
+  table.new-default tr.status-error td { background-color: #ff3c44; color: white;}
+  table.new-default tr.status-error td a:link,
+  table.new-default tr.status-error td a:visited { color: #c3fffc; }
+  table.new-default tr.status-finished td { background-color: #cfffd4; }
+  .small { font-size: 14px; }
+</style>
+
+<%= form_tag stored_jobs_path, method: :get do %>
+<div class="filter-panel">
+    <div class="filters">
+      <div class="filter">
+        <br/>
+        <%= text_field_tag :date_from, params[:date_from], placeholder: 'Updated From',
+                           class: 'date-time-field', data: {'default-date': Time.zone.now.to_s(:datetimepicker)} %>
+        <br/>
+        <%= text_field_tag :date_to, params[:date_to], placeholder: 'Updated Until',
+                           class: 'date-time-field', data: {'default-date': Time.zone.now.to_s(:datetimepicker)} %>
+      </div>
+      <div class="filter">
+        <%= select_tag :state, options_for_select(StoredJob.titleized_enum(:state), params[:state]), include_blank: 'Any State' %>
+      </div>
+      <div class="filter">
+        <%= select_tag :job_type, options_for_select(StoredJob.job_types_for_display, params[:job_type]), include_blank: 'Any Job' %>
+      </div>
+      <div class="filter">
+        <%= submit_tag 'Search', class: 'button search' %>
+      </div>
+    </div>
+  </div>
+  <% end %>
+<br/>
+
+<table class="new-default centered-table">
+  <tr>
+    <th>In Queue</th>
+    <th>Processing</th>
+  </tr>
+  <tr>
+    <td><%= @queue_attributes[:in_queue] %></td>
+    <td><%= @queue_attributes[:running] %></td>
+  </tr>
+</table>
+
+<div class="center">
+  <%= button_to 'Queue Test job', queue_test_job_stored_jobs_path, class: 'button process' %>
+</div>
+
+<br/>
+
+<% if @jobs.any? %>
+  <table class="new-default centered-table">
+    <tr>
+      <th>ID</th>
+      <th>Type</th>
+      <th>State</th>
+      <th>Queued</th>
+      <th>Finished</th>
+      <th>Error</th>
+      <th>Retries</th>
+    </tr>
+    <% @jobs.each do |job| %>
+      <tr class="status-<%= job.state %>">
+        <td><%= job.id %></td>
+        <td>
+          <%= job.class.display_name %>
+          <br/><%= link_to 'Options', '#', class: 'dialog-link', data: {title: 'Options'} %>
+          <div class="dialog">
+          <% job.options.each do |k, v| %>
+            <%= k.to_s.titleize %>: <%= v %><br/>
+          <% end %>
+          </div>
+        </td>
+        <td>
+          <%= job.state.titleize %>
+        </td>
+        <td>
+          <%= job.created_at.to_s(:fulltime) %>
+        </td>
+        <td>
+          <%= job.finished_at? ? job.finished_at.to_s(:fulltime) : 'N/A' %>
+          <% if job.results.present? %>
+            <br/><%= link_to 'Results', '#', class: 'dialog-link', data: {title: 'Results'} %>
+            <div class="dialog"><%= simple_format job.results.to_s %></div>
+          <% end %>
+        </td>
+        <td>
+          <%= job.error_message %>
+          <% if job.error_backtrace.present? %>
+            <br/><%= link_to 'Backtrace', '#', class: 'dialog-link', data: {title: 'Error Backtrace'}  %>
+            <div class="dialog"><%= simple_format job.error_backtrace.to_s %></div>
+          <% end %>
+        </td>
+        <td>
+          <%= job.retries %>
+        </td>
+      </tr>
+    <% end %>
+  </table>
+  <%= render :partial => 'layouts/paginate', object: @jobs %>
+<% else %>
+  <h3>No jobs found!</h3>
+<% end %>

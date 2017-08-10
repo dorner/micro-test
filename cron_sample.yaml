@@ -1,0 +1,6 @@
+# Rename this file to cron.yaml and you can schedule jobs in Elastic Beanstalk.
+version: 1
+cron:
+ - name: "SomeJobClass"
+   url: "/periodic_tasks"
+   schedule: "*/5 * * * *"  # Every 5 minutes

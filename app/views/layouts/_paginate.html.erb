@@ -1,0 +1,26 @@
+<% if paginate && paginate.any? %>
+  <% param_name = 'page' unless local_assigns[:param_name].present? %>
+  <br style="clear:both;"/><br/>
+  <div class="pagination"><br/>
+    <% if defined?(name) && !name.blank? %>
+      <%= page_entries_info paginate, :model => name %>
+    <% else %>
+      <%= page_entries_info paginate %>
+    <% end %>
+    <span class="paginate-pages">
+    <% if local_assigns[:ajax_target].present? %>
+      <% options = {}
+         options = ajax_options if local_assigns[:ajax_options]
+      %>
+      <%= will_paginate_ajax paginate, ajax_target,
+                        :container => false,
+                        :param_name => param_name,
+                        :params => options %>
+      <% else %>
+      <%= will_paginate paginate,
+                        :container => false,
+                        :param_name => param_name %>
+    <% end %>
+    </span>
+  </div>
+<% end %>

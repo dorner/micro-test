@@ -1,0 +1,230 @@
+Parameters:
+
+  EcsStack:
+    Type: String  #same as cluster name
+
+  LbStack:
+    Type: String
+
+  URL:
+    Type: String  #my-service.wishabidev.com
+
+  ELBListenerRulePriority:
+    Type: Number
+    Default: 1
+
+  HostedZoneId:
+    Type: String
+    #Default: ZUO0HZO7XP1HA  #wishabidev.com
+
+  DesiredCount:
+    Type: Number
+    Default: 0
+
+  Environment:
+    Type: String
+    #Default: development
+    AllowedValues: ['development', 'staging', 'production']
+
+  # Define how the service should be placed across ECS Instances
+  PlacementStrategyType:
+    Type: String
+    Default: spread
+  
+  PlacementStrategyField:
+    Type: String
+    Default: attribute:ecs.availability-zone
+
+  ContainerPort:
+    Type: Number
+    Default: 3000
+
+  ContainerHardMemoryLimit:
+    Type: Number
+    Default: 256
+  
+  ContainerSoftMemoryLimit:
+    Type: Number
+    Default: 128
+
+  ContainerCPULimit:
+    Type: Number
+    Default: 128
+
+
+Resources:
+
+  # @TODO: how to auto-inc Priority?
+  LoadBalancerListenerRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+      Conditions:
+        - Field: host-header
+          Values:
+            - !Sub "${URL}"
+      ListenerArn:
+        Fn::ImportValue: !Sub "${LbStack}-Lb-Https-Lsnr"
+      Priority: !Ref ELBListenerRulePriority
+
+  ServiceR53Record:
+    Type: AWS::Route53::RecordSet
+    Properties: 
+      Type: A
+      AliasTarget:
+        DNSName:
+          Fn::ImportValue: !Sub "${LbStack}-Dns"
+        HostedZoneId:
+          Fn::ImportValue: !Sub "${LbStack}-Lb-Hz"
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Sub "${URL}."  #must have '.'
+          
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub ${AWS::StackName}
+      VpcId:
+        Fn::ImportValue: !Sub "${EcsStack}-Vpc"
+      Port: 80
+      Protocol: HTTP
+      Matcher:
+        HttpCode: 200-299
+      HealthCheckIntervalSeconds: 10
+      HealthCheckPath: /
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      TargetGroupAttributes:
+        - Key: deregistration_delay.timeout_seconds
+          Value: 120
+
+  ECSServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${AWS::StackName}-service
+      Path: /
+      AssumeRolePolicyDocument: |
+        {
+          "Statement": [{
+            "Effect": "Allow",
+            "Principal": { "Service": [ "ecs.amazonaws.com" ]},
+            "Action": [ "sts:AssumeRole" ]
+          }]
+        }
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceRole
+
+  Service:
+    Type: AWS::ECS::Service
+    Properties:
+      Cluster:
+        Fn::ImportValue: !Sub "${EcsStack}-Cluster"
+      ServiceName : !Ref AWS::StackName
+      Role: !Sub ${ECSServiceRole}
+      DesiredCount: !Ref DesiredCount
+      TaskDefinition: !Ref TaskDefinition
+      PlacementStrategies:
+        - Type: !Ref PlacementStrategyType
+          Field: !Ref PlacementStrategyField
+      LoadBalancers:
+        - ContainerName: !Sub ${AWS::StackName}
+          ContainerPort: 3000
+          TargetGroupArn: !Sub ${TargetGroup}
+
+  ServiceLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties: 
+      LogGroupName: !Ref AWS::StackName
+      RetentionInDays: 60
+
+  TaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${AWS::StackName}-task
+      Policies:
+        - PolicyName: cloudwatchlogs
+          PolicyDocument: 
+            Version: "2012-10-17"
+            Statement: 
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - logs:DescribeLogStreams
+                Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*:${AWS::StackName}:*"
+      AssumeRolePolicyDocument: |
+        {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "ecs-tasks.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        }
+
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Ref AWS::StackName
+      TaskRoleArn: !Ref TaskRole
+      ContainerDefinitions:
+        - Name: !Sub ${AWS::StackName}
+          Image: !Sub ${AWS::AccountId}.dkr.ecr.us-east-1.amazonaws.com/${AWS::StackName}:latest
+          Essential: true
+          Memory: !Ref ContainerHardMemoryLimit
+          MemoryReservation: !Ref ContainerSoftMemoryLimit
+          Cpu: !Ref ContainerCPULimit
+          MountPoints: []
+          Environment:
+            - Name: WishabiEnvironment
+              Value: !ImportValue PlatformSharedResources-WishabiEnv 
+            - Name: Environment
+              Value: !Ref Environment
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref ServiceLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: !Ref AWS::StackName
+          PortMappings:
+            - ContainerPort: !Ref ContainerPort
+              HostPort: 0
+      Volumes: []
+
+Outputs:
+  TaskDefinition:
+    Value: !Ref TaskDefinition
+    Export:
+      Name: !Sub ${AWS::StackName}-TaskDefinition
+
+  TaskRole:
+    Value: !Ref TaskRole
+    Export:
+      Name: !Sub ${AWS::StackName}-TaskRole
+
+  ServiceLogGroup:
+    Value: !Ref ServiceLogGroup
+    Export:
+      Name: !Sub ${AWS::StackName}-ServiceLogGroup
+  
+  Service:
+    Value: !Ref Service
+    Export:
+      Name: !Sub ${AWS::StackName}-Service
+
+  ServiceR53Record:
+    Value: !Ref ServiceR53Record
+    Export:
+      Name: !Sub ${AWS::StackName}-ServiceR53Record
+  
+  TargetGroup:
+    Value: !Ref TargetGroup
+    Export: 
+      Name: !Sub ${AWS::StackName}-TargetGroup

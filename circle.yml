@@ -1,0 +1,26 @@
+machine:
+  ruby:
+    version: 2.2.7
+
+# `npm install` should be run by default
+#dependencies:
+#  override:
+#    - npm install
+
+# `npm test` is run by default if there
+# is a test script in package.json
+#test:
+#  override:
+#    - npm test
+
+deployment:
+  production:
+    branch: production
+    commands:
+      - chmod +x ./deploy/production.sh
+      - ./deploy/production.sh
+  staging:
+    branch: staging
+    commands:
+      - chmod +x ./deploy/staging.sh
+      - ./deploy/staging.sh

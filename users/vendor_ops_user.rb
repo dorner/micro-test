@@ -1,0 +1,2 @@
+class VendorOpsUser < VendorUser
+end

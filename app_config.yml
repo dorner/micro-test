@@ -1,0 +1,23 @@
+app_settings:
+  project_name: test_app
+  # project_title: Test App
+  # app_name_clean: TESTAPP
+  use_elastic_beanstalk: false
+  environments: production # or "staging production" for both
+  create_worker: false
+  # This lets you set up an external worker to send your delayed requests to.
+  # Note that this worker will need a separate codebase and separate
+  # Elastic Beanstalk command line setup for deploys. See ecom-feeds for
+  # an example. Adding it in this config will allow it to all be part of
+  # the same stack though.
+  external_worker_name:
+  external_worker_db_access: false
+  create_app: true
+  aws_profile_name: dev
+  # ssh_key: wishabi-keypair
+  # REQUIRED: You must enter the DataDog API key here. You can retrieve this
+  # from an existing Elastic Beanstalk application by going to the AWS console
+  # and clicking e.g.
+  # Elastic Beanstalk -> Ecom-admin -> ecom-admin-production-worker -> Configuration -> Software Configuration
+  datadog_api_key: "ENTER KEY HEREs"
+  use_database: true

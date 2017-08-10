@@ -1,0 +1,106 @@
+#!/usr/bin/env ruby
+require "thor"
+require 'securerandom'
+require 'bundler/inline'
+require 'yaml'
+
+class App < Thor
+  include Thor::Actions
+
+  def self.source_root
+      File.dirname(__FILE__)
+  end
+
+  desc 'generate', 'Generate your boilerplate app'
+  def generate
+    unless run('gem list liquid -i')
+      gemfile(true) do
+        source 'https://rubygems.org'
+        gem 'activesupport'
+        gem 'aws-sdk'
+        gem 'liquid'
+      end
+    end
+    require 'liquid'
+    require 'active_support'
+    require 'active_support/core_ext'
+    Liquid::Template.error_mode = :strict
+
+    config = YAML.load_file('./app_config.yml').with_indifferent_access[:app_settings]
+
+    project_name = config[:project_name]
+    unless project_name =~ /^[a-zA-z0-9_]+$/
+      say('Project name must only have alphabetical characters and underscores!')
+      exit
+    end
+    use_eb = config[:use_elastic_beanstalk]
+
+    if config[:datadog_api_key] == 'ENTER KEY HERE'
+      say('DataDog API key must be entered - please see instructions in app_config.yml!')
+      exit
+    end
+
+    template_hash = {
+      secret: SecureRandom.hex(64),
+      test_secret: SecureRandom.hex(64),
+      project_name: project_name,
+      project_class_name: project_name.classify,
+      project_title: config[:project_title].presence || project_name.titleize,
+      use_eb: use_eb,
+      create_worker: config[:create_worker],
+      create_app: config[:create_app],
+      app_name_clean: config[:app_name_clean].presence || project_name,
+      environment_prefix: project_name.dasherize,
+      external_worker_name: config[:external_worker_name].presence.try(:dasherize),
+      external_worker_title: config[:external_worker_name].presence.try(:titleize),
+      external_worker_db_access: config[:external_worker_db_access] == 'true',
+      region: ENV['AWS_REGION'] || 'us-east-1',
+      ssh_key: config[:ssh_key],
+      use_database: config[:use_database],
+      datadog_api_key: config[:datadog_api_key]
+    }.stringify_keys
+
+    say 'Updating files...'
+
+    unless use_eb
+      remove_file('.ebextensions')
+      remove_file('.elasticbeanstalk')
+      remove_file('deploy.sh')
+    end
+
+    unless config[:use_database]
+      remove_file('config/database.yml')
+      remove_dir('job_controller')
+      remove_dir('app/models')
+      remove_file('config/load_jobs.rb')
+    end
+
+    files = Dir.glob(File.join('.', '**', '*'), File::FNM_DOTMATCH).reject do |p|
+      %w(ico png).include?(File.extname(p)) ||
+      p.end_with?('DS_Store') ||
+      File.directory?(p) || p =~ /\/admin-shared\// || p =~ /\/tmp\// ||
+        p.ends_with?('.zip') ||
+        (p.start_with?('./.') && !p.start_with?('./.elasticbeanstalk') && !p.start_with?('./.ebextensions') && p != '.gitignore')
+    end
+    files.each do |f|
+      begin
+        template = Liquid::Template.parse(File.read(f))
+        rendered = template.render(template_hash)
+        File.open(f, 'w') { |file| file.write(rendered) }
+      rescue => e
+        puts "Could not generate template for #{f}: #{e.message}"
+      end
+    end
+
+    run('bundle install')
+    say("Updating git repo... (don't worry, not pushing anything - don't push it yourself either since it may contain secrets)")
+    run('git commit -am "Generated app"')
+
+    say <<-NOTICE
+    Your app has been generated! Run ./create_aws_resources if you're using Elastic Beanstalk! 
+    Run ./setup_local as well (after creating resources if necessary).
+NOTICE
+  end
+
+end
+App.start(['generate'])

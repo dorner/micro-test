@@ -1,0 +1,31 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <% page_title = content_for(:title)&.html_safe %>
+    <title><%= raw "#{page_title} | " if page_title%>Flipp Test App</title>
+    <%= javascript_include_tag 'application' %>
+    <%= stylesheet_link_tag 'application' %>
+    <%= favicon_link_tag %>
+    <%= yield :additional_assets %>
+    <%= csrf_meta_tags %>
+  </head>
+
+  <body id='main_interface'>
+    <%= render file: 'admin-shared/views/main_layout/_utility_bar.html.erb' %>
+    <div id="menu-layout">
+      <%= render file: 'admin-shared/views/main_layout/_menu.html.erb' %>
+      <div id="main-content">
+        <%= render_flash %>
+        <% if content_for?(:title) %>
+          <h1><%= yield(:title) %>
+          <% if content_for?(:description) %>
+            <small><%= yield(:description) %></small>
+          <% end %>
+          </h1>
+        <% end %>
+        <%= content_for?(:sub_layout) ? yield(:sub_layout) : yield %>
+      </div>
+    </div>
+  </body>
+</html>

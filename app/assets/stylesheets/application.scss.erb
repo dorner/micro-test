@@ -1,0 +1,35 @@
+/*
+ * This is a manifest file that'll be compiled into application.css, which will include all the files
+ * listed below.
+ *
+ * Any CSS and SCSS file within this directory, lib/assets/stylesheets, vendor/assets/stylesheets,
+ * or any plugin's vendor/assets/stylesheets directory can be referenced here using a relative path.
+ *
+ * You're free to add application-wide styles to this file and they'll appear at the bottom of the
+ * compiled file so the styles you add here take precedence over styles defined in any other CSS/SCSS
+ * files in this directory. Styles in this file should be added after the last require_* statement.
+ * It is generally better to create a new file per style scope.
+ *
+ *= require_tree .
+ *= require_self
+ *= require jquery-ui
+ *= require jquery-ui-timepicker-addon
+ *= require select2
+ */
+
+@import '<%= "#{Rails.root}/admin-shared/sass/rails4/main_layout" %>';
+@import '<%= "#{Rails.root}/admin-shared/sass/base_styles" %>';
+@import '<%= "#{Rails.root}/admin-shared/sass/control_elements" %>';
+@import '<%= "#{Rails.root}/admin-shared/sass/rails4/notifications" %>';
+@import '<%= "#{Rails.root}/admin-shared/sass/tables" %>';
+@import '<%= "#{Rails.root}/admin-shared/sass/bootstrap_forms" %>';
+@import '<%= "#{Rails.root}/admin-shared/sass/rails4/buttons" %>';
+
+
+#notification-info {
+  background-image: none;
+}
+
+#notification-errors {
+  background-image: none;
+}

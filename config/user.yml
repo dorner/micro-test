@@ -1,0 +1,19 @@
+# Use this YAML file to specify your user details in development mode.
+# You can use this in one of a few ways:
+# * If the login you specify is already in the database, the app will load
+#   the user with that login. You could really just remove all data other
+#   than the login.
+# * Otherwise, the app will create a user with the given information.
+# * Or, you could clear out the file or just delete it, and you will be
+#   forwarded to the Single Sign On app.
+#   This will proceed with the same sort of login logic as production.
+user:
+  name: Admin
+  login: admin
+  email: admin@wishabi.com
+  type: SuUser
+  vendor_id:
+  merchant_id:
+  partner_id:
+  extra_attributes:
+    permissions: 3

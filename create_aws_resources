@@ -1,0 +1,155 @@
+#!/usr/bin/env ruby
+require "thor"
+require 'securerandom'
+require 'yaml'
+
+class App < Thor
+  include Thor::Actions
+
+  def self.source_root
+    File.dirname(__FILE__)
+  end
+
+  desc 'create', 'Create AWS resources'
+  def create
+
+    if `which pip`.length <= 0
+      say("Please install pip and come back when you're done!")
+      exit
+    end
+
+    say 'Updating submodules...'
+    run 'git submodule init && git submodule update'
+
+    say('Installing Elastic Beanstalk command line...')
+    run('pip install --upgrade --user awsebcli')
+
+    require 'active_support'
+    require 'active_support/core_ext'
+    require 'aws-sdk'
+    config = YAML.load_file('./app_config.yml').with_indifferent_access[:app_settings]
+
+    project_name = config[:project_name]
+    environment_prefix = project_name.dasherize
+    region = ENV['AWS_REGION'] || 'us-east-1'
+
+    profile_name = config[:aws_profile_name] || 'default'
+    credentials = Aws::SharedCredentials.new(profile_name: profile_name)
+    Aws.config[:credentials] = credentials
+    envs = config[:environments].split.map(&:to_sym)
+    Aws.config[:region] = region
+
+    client = Aws::CloudFormation::Client.new
+    sts_client = Aws::STS::Client.new
+    account = sts_client.get_caller_identity.account
+    is_prod = account == '421990735784'
+
+    vpc_id = is_prod ? 'vpc-f85c159d' : 'vpc-497bd12f'
+    subnet_group = is_prod ? 'subnet-6a5af941': 'subnet-0c0ebd30'
+    subnet_group_2 = is_prod ? 'subnet-c3a7229a' : 'subnet-de462ff3'
+
+    template_body = File.read('./cloudformation.yml')
+    total = client.get_template_summary(template_body: template_body).resource_types.size
+
+    is_eb_init = false
+
+    envs.each do |env|
+      stack_name = "#{environment_prefix}-#{env}"
+      say "Creating stack #{environment_prefix}-#{env}: ..."
+      vars = {
+        'EnvironmentName' => env,
+        'VpcId' => vpc_id,
+        'SubnetId' => subnet_group,
+        'SecretKeyBase' => SecureRandom.hex(64)
+      }
+      if config[:use_database]
+        vars['SubnetId2'] = subnet_group_2
+        vars['DBPassword'] = SecureRandom.hex(8)
+      end
+      client.create_stack(
+              stack_name: stack_name,
+              template_body: template_body,
+              parameters: vars.map { |k, v| { parameter_key: k, parameter_value: v} }
+      )
+      say "Done creating stack for #{env}!"
+
+      resp = client.describe_stacks(stack_name: stack_name)
+      say 'Waiting for app to be ready (may take 15 minutes or so)...'
+      while %w(CREATE_IN_PROGRESS UPDATE_IN_PROGRESS).include?(resp.stacks[0].stack_status)
+        sleep(5)
+        resp = client.describe_stacks(stack_name: stack_name)
+        resource_resp = client.describe_stack_resources(stack_name: stack_name)
+        total_done = resource_resp.stack_resources.count do |r|
+          %w(CREATE_COMPLETE UPDATE_COMPLETE).include?(r.resource_status)
+        end
+        creating = resource_resp.stack_resources.select do |r|
+          %w(CREATE_IN_PROGRESS UPDATE_IN_PROGRESS).include?(r.resource_status)
+        end
+        create_string = if creating.empty?
+                          ''
+                        else
+                          ": Creating #{creating.map(&:logical_resource_id).join(', ')}..."
+                        end
+        time = Time.now.strftime("%H:%M:%S")
+        status = resp.stacks[0].stack_status
+        puts "#{time} #{status} Progress: #{total_done} complete of #{total}#{create_string}"
+      end
+      puts ''
+      status = resp.stacks[0].stack_status
+      unless %w(CREATE_COMPLETE UPDATE_COMPLETE).include?(status)
+        say "Stack failed, status is #{status}!"
+        exit
+      end
+
+      eb_client = Aws::ElasticBeanstalk::Client.new
+      app_url = eb_client.describe_environments(
+        environment_names: ["#{environment_prefix}-#{env}-app"]
+      ).environments[0].cname
+
+      say 'Removing app config (may contain secrets)...'
+      remove_file('app_config.yml')
+      run('git commit -am "Generated app" --amend')
+
+      say 'App is ready! Initializing Elastic Beanstalk command line...'
+
+      unless is_eb_init
+        eb_config = <<-EB
+branch-defaults:
+  master:
+    environment: #{environment_prefix}-production-worker
+environment-defaults:
+  #{environment_prefix}-production-worker:
+    branch: null
+    repository: null
+global:
+  application_name: #{project_name}
+#{"  default_ec2_keyname: #{config[:ssh_key]}" if config[:ssh_key].present?}
+  default_platform: 64bit Amazon Linux 2016.09 v2.3.1 running Ruby 2.3 (Passenger
+    Standalone)
+  default_region: #{region}
+  profile: #{config[:aws_profile_name].presence || 'default'}
+  sc: git
+deploy:
+  artifact: ebdeploy.zip
+        EB
+
+        create_file('./.elasticbeanstalk/config.yml', eb_config)
+      end
+
+      is_eb_init = true
+
+      say('Deploying your app...')
+      run("./deploy.sh #{env}")
+
+      say('Final setup steps need to be done:')
+      unless config[:ssh_key]
+        say('Set up an EC2 key pair and then type eb ssh --setup with it')
+      end
+      say('Go to https://ums.wishabi.com or https://ums-staging.wishabi.com (depending on environment)')
+      say("Add the application #{project_name} with environment #{env} and the URL http://#{app_url}")
+    end
+
+    say 'All done! Enjoy!'
+  end
+end
+App.start(['create'])
