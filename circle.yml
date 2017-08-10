@@ -2,10 +2,9 @@ machine:
   ruby:
     version: 2.2.7
 
-# `npm install` should be run by default
-#dependencies:
-#  override:
-#    - npm install
+checkout:
+  post:
+    - git submodule init && git submodule update
 
 # `npm test` is run by default if there
 # is a test script in package.json
